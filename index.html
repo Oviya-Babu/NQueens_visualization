@@ -16,6 +16,9 @@
   <div class="bg-gradient"></div>
   <div class="bg-grid"></div>
 
+  <!-- Confetti canvas (celebration particles) -->
+  <canvas id="confettiCanvas"></canvas>
+
   <div class="app" id="app">
 
     <!-- ===== HEADER ===== -->
@@ -43,7 +46,6 @@
             <span class="mode-icon">📚</span>
             <span class="mode-label">Learn</span>
           </button>
-          <div class="mode-indicator" id="modeIndicator"></div>
         </div>
       </div>
       <div class="header-right">
@@ -122,6 +124,10 @@
               <span class="ctrl-icon">⏭</span>
               <span class="ctrl-text">Step</span>
             </button>
+            <button class="ctrl-btn hint-btn" id="hintBtn" title="Get a hint">
+              <span class="ctrl-icon">💡</span>
+              <span class="ctrl-text">Hint</span>
+            </button>
             <button class="ctrl-btn danger" id="resetBtn" title="Reset board">
               <span class="ctrl-icon">↺</span>
               <span class="ctrl-text">Reset</span>
@@ -184,13 +190,22 @@
           <!-- Messages will be injected here -->
         </div>
 
+        <!-- Did You Know? Fact Section -->
+        <div class="fact-card glass-card" id="factCard">
+          <div class="fact-header">
+            <span class="fact-icon">💡</span>
+            <span>Did You Know?</span>
+          </div>
+          <p class="fact-text" id="factText">The 8-Queens puzzle was first proposed by chess composer Max Bezzel in 1848.</p>
+        </div>
+
         <!-- Code Snapshot -->
         <div class="code-snapshot glass-card" id="codeSnapshot">
           <div class="code-header">
             <span class="code-icon">💻</span>
             <span>Live Code</span>
           </div>
-          <pre class="code-block"><code id="codeDisplay">function solveNQueens(row) {
+          <pre class="code-block" id="codeBlock"><code id="codeDisplay">function solveNQueens(row) {
   if (row === N) return true; // ✓ solved!
   
   for (col = 0; col &lt; N; col++) {

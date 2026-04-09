@@ -58,10 +58,11 @@ const state = {
   queensPlaced: 0,
   totalSteps: 0,
   totalBacktracks: 0,
-  manualConflicts: [],
+  manualMoveCount: 0,    // tracks moves for fact triggering
   firstBacktrackSeen: false,
   firstConflictSeen: false,
   firstPlacementSeen: false,
+  hintCell: null,         // {row, col} of currently highlighted hint
 };
 
 
@@ -84,6 +85,7 @@ function cacheDom() {
   DOM.startBtn = document.getElementById('startBtn');
   DOM.pauseBtn = document.getElementById('pauseBtn');
   DOM.stepBtn = document.getElementById('stepBtn');
+  DOM.hintBtn = document.getElementById('hintBtn');
   DOM.resetBtn = document.getElementById('resetBtn');
   DOM.speedSlider = document.getElementById('speedSlider');
   DOM.speedValue = document.getElementById('speedValue');
@@ -95,8 +97,146 @@ function cacheDom() {
   DOM.algoAction = document.getElementById('algoAction');
   DOM.algoQueens = document.getElementById('algoQueens');
   DOM.codeDisplay = document.getElementById('codeDisplay');
-  DOM.modeSelector = document.getElementById('modeSelector');
+  DOM.codeBlock = document.getElementById('codeBlock');
+  DOM.factText = document.getElementById('factText');
+  DOM.confettiCanvas = document.getElementById('confettiCanvas');
+  DOM.confettiCtx = DOM.confettiCanvas.getContext('2d');
 }
+
+
+// ─── INTERESTING FACT ENGINE ──────────────────────────────
+
+const FACTS_POOL = [
+  "👑 The 8-Queens puzzle was first proposed by chess composer Max Bezzel in 1848.",
+  "🤯 There are 92 distinct solutions to the 8-Queens problem!",
+  "⚡ Backtracking is used in Sudoku solvers, maze generators, and pathfinding algorithms.",
+  "🧠 The N-Queens problem grows exponentially — that's why pruning is essential.",
+  "💡 N=4 has only 2 distinct solutions — try finding both!",
+  "🚀 Backtracking is a form of depth-first search (DFS) through a decision tree.",
+  "📐 For N=1, there's exactly 1 solution. For N=2 and N=3, there are zero!",
+  "🏆 In 1874, Günther proposed a determinant-based approach to N-Queens.",
+  "🌀 The search space for 8-Queens is 16.7 million — backtracking prunes most of it.",
+  "🔬 N-Queens is NP-hard when generalized, but efficient heuristics exist for large N.",
+  "♟️ The problem is related to placing non-attacking rooks and bishops too!",
+  "🎯 Constraint propagation can reduce the search space dramatically.",
+  "📊 For N=10, there are 724 distinct solutions.",
+  "💻 Backtracking was popularized by Derrick Lehmer in the 1950s.",
+  "🌟 The first complete analysis of 8-Queens was by Franz Nauck in 1850.",
+  "🔄 Every N-Queens solution has at most 8 variants through rotation and reflection.",
+  "⏱️ A modern computer solves 8-Queens in microseconds using backtracking.",
+  "🧩 N-Queens is a classic constraint satisfaction problem (CSP).",
+  "🎲 Random placement solves N-Queens faster for very large N (like N=1000)!",
+  "📈 The number of solutions grows roughly exponentially: S(N) ≈ 0.143 × N!"
+];
+
+const factEngine = {
+  queue: [],
+  lastIndex: -1,
+
+  init() {
+    this.shuffle();
+  },
+
+  shuffle() {
+    this.queue = [...Array(FACTS_POOL.length).keys()];
+    // Fisher-Yates shuffle
+    for (let i = this.queue.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [this.queue[i], this.queue[j]] = [this.queue[j], this.queue[i]];
+    }
+    // Ensure no repeat of last shown fact
+    if (this.queue[0] === this.lastIndex && this.queue.length > 1) {
+      [this.queue[0], this.queue[1]] = [this.queue[1], this.queue[0]];
+    }
+  },
+
+  getNext() {
+    if (this.queue.length === 0) this.shuffle();
+    const idx = this.queue.shift();
+    this.lastIndex = idx;
+    return FACTS_POOL[idx];
+  },
+
+  showFact() {
+    const fact = this.getNext();
+    if (DOM.factText) {
+      DOM.factText.style.animation = 'none';
+      DOM.factText.offsetHeight; // trigger reflow
+      DOM.factText.style.animation = 'factFadeIn 0.6s ease-out';
+      DOM.factText.textContent = fact;
+    }
+  }
+};
+
+
+// ─── CONFETTI SYSTEM ──────────────────────────────────────
+
+const confetti = {
+  particles: [],
+  animationId: null,
+
+  init() {
+    DOM.confettiCanvas.width = window.innerWidth;
+    DOM.confettiCanvas.height = window.innerHeight;
+    window.addEventListener('resize', () => {
+      DOM.confettiCanvas.width = window.innerWidth;
+      DOM.confettiCanvas.height = window.innerHeight;
+    });
+  },
+
+  launch(count = 120) {
+    this.particles = [];
+    const colors = ['#818cf8', '#34d399', '#fbbf24', '#f87171', '#c084fc', '#67e8f9', '#fb923c'];
+    for (let i = 0; i < count; i++) {
+      this.particles.push({
+        x: window.innerWidth * 0.5 + (Math.random() - 0.5) * 300,
+        y: window.innerHeight * 0.4,
+        vx: (Math.random() - 0.5) * 15,
+        vy: -Math.random() * 18 - 5,
+        w: Math.random() * 8 + 3,
+        h: Math.random() * 6 + 2,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        rotation: Math.random() * 360,
+        rotSpeed: (Math.random() - 0.5) * 12,
+        gravity: 0.3 + Math.random() * 0.15,
+        opacity: 1,
+        decay: 0.003 + Math.random() * 0.004
+      });
+    }
+    if (!this.animationId) this.animate();
+  },
+
+  animate() {
+    const ctx = DOM.confettiCtx;
+    ctx.clearRect(0, 0, DOM.confettiCanvas.width, DOM.confettiCanvas.height);
+
+    this.particles = this.particles.filter(p => p.opacity > 0.01);
+
+    for (const p of this.particles) {
+      p.x += p.vx;
+      p.y += p.vy;
+      p.vy += p.gravity;
+      p.vx *= 0.99;
+      p.rotation += p.rotSpeed;
+      p.opacity -= p.decay;
+
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rotation * Math.PI / 180);
+      ctx.globalAlpha = Math.max(0, p.opacity);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+      ctx.restore();
+    }
+
+    if (this.particles.length > 0) {
+      this.animationId = requestAnimationFrame(() => this.animate());
+    } else {
+      this.animationId = null;
+      ctx.clearRect(0, 0, DOM.confettiCanvas.width, DOM.confettiCanvas.height);
+    }
+  }
+};
 
 
 // ─── ALGORITHM ENGINE ─────────────────────────────────────
@@ -108,6 +248,15 @@ function isSafe(board, row, col) {
     if (Math.abs(board[i] - col) === Math.abs(i - row)) return { safe: false, reason: 'diagonal', conflictRow: i };
   }
   return { safe: true };
+}
+
+function isSafeSimple(board, row, col, n) {
+  for (let i = 0; i < n; i++) {
+    if (i === row || board[i] === -1) continue;
+    if (board[i] === col) return false;
+    if (Math.abs(board[i] - col) === Math.abs(i - row)) return false;
+  }
+  return true;
 }
 
 function generateSteps(n) {
@@ -154,6 +303,58 @@ function generateSteps(n) {
 }
 
 
+// ─── HINT SYSTEM (BACKTRACKING-BASED) ─────────────────────
+
+function computeHint(currentBoard, n) {
+  // Find the first empty row
+  let targetRow = -1;
+  for (let r = 0; r < n; r++) {
+    if (currentBoard[r] === -1) {
+      targetRow = r;
+      break;
+    }
+  }
+  if (targetRow === -1) return null; // all rows filled
+
+  // Try to solve from current state using backtracking
+  const testBoard = [...currentBoard];
+
+  function canSolve(board, row) {
+    if (row === n) return true;
+    if (board[row] !== -1) {
+      // Row already has a queen — check if it's valid and move on
+      for (let i = 0; i < n; i++) {
+        if (i === row || board[i] === -1) continue;
+        if (board[i] === board[row]) return false;
+        if (Math.abs(board[i] - board[row]) === Math.abs(i - row)) return false;
+      }
+      return canSolve(board, row + 1);
+    }
+    for (let col = 0; col < n; col++) {
+      if (isSafeSimple(board, row, col, n)) {
+        board[row] = col;
+        if (canSolve(board, row + 1)) return true;
+        board[row] = -1;
+      }
+    }
+    return false;
+  }
+
+  // Try each column for targetRow and see if a solution is possible
+  for (let col = 0; col < n; col++) {
+    const tryBoard = [...currentBoard];
+    if (isSafeSimple(tryBoard, targetRow, col, n)) {
+      tryBoard[targetRow] = col;
+      if (canSolve([...tryBoard], targetRow + 1)) {
+        return { row: targetRow, col: col };
+      }
+    }
+  }
+
+  return null; // no valid hint (board state might be unsolvable)
+}
+
+
 // ─── AI TUTOR MESSAGE GENERATOR ───────────────────────────
 
 const TUTOR = {
@@ -165,79 +366,79 @@ const TUTOR = {
     const msgs = [];
     if (mode === 'manual') {
       msgs.push({ type: 'info', text: `Welcome! 🎮 You're playing the <b>${n}-Queens Challenge</b>. Place ${n} queens on the board so that no two attack each other.` });
-      msgs.push({ type: 'system', text: 'Click on any cell to place or remove a queen. I\'ll check for conflicts in real-time.' });
+      msgs.push({ type: 'system', text: 'Click any cell to place or remove a queen. Use 💡 Hint if you get stuck!' });
     } else if (mode === 'solve') {
       msgs.push({ type: 'info', text: `🤖 <b>AI Solve Mode</b> — I'll solve the ${n}-Queens problem using <b>Backtracking</b>. Watch every step!` });
-      msgs.push({ type: 'system', text: 'Use the controls below to Start, Pause, or Step through the algorithm.' });
+      msgs.push({ type: 'system', text: 'Use Start, Pause, or Step to control the algorithm.' });
     } else if (mode === 'learn') {
-      msgs.push({ type: 'teaching', text: `📚 <b>Welcome to Learn Mode!</b> I'll teach you how the <b>Backtracking Algorithm</b> solves the ${n}-Queens problem.` });
-      msgs.push({ type: 'teaching', text: `<b>The Goal:</b> Place ${n} queens on a ${n}×${n} board so no two queens threaten each other — no shared rows, columns, or diagonals.` });
-      msgs.push({ type: 'teaching', text: `<b>The Strategy — Backtracking:</b><br>Think of it like exploring a maze. We go forward, placing one queen per row. If we reach a dead end (no safe spot), we <em>backtrack</em> — undo the last queen and try a different column.` });
-      msgs.push({ type: 'system', text: 'Press Start or Step to begin. I\'ll explain every decision along the way!' });
+      msgs.push({ type: 'teaching', text: `📚 <b>Welcome to Learn Mode!</b> I'll teach you how <b>Backtracking</b> solves the ${n}-Queens problem.` });
+      msgs.push({ type: 'teaching', text: `<b>The Goal:</b> Place ${n} queens on a ${n}×${n} board — no shared rows, columns, or diagonals.` });
+      msgs.push({ type: 'teaching', text: `<b>The Strategy:</b> Think of it like exploring a maze. We place one queen per row, moving forward when safe. If we hit a dead end, we <em>backtrack</em> — undo and try another path.` });
+      msgs.push({ type: 'system', text: 'Press Start or Step to begin. I\'ll explain every decision!' });
     }
     return msgs;
   },
 
-  stepMessage(step, mode, state) {
+  stepMessage(step, mode, gameState) {
     const { type, row, col, conflictRow, conflictReason, board } = step;
     const colL = this.getColLetter(col);
     const msgs = [];
 
     switch (type) {
       case 'enter-row':
-        msgs.push({ type: 'info', text: `➡️ Moving to <b>Row ${row + 1}</b>. Let me scan for a safe column...` });
+        msgs.push({ type: 'info', text: `➡️ Moving to <b>Row ${row + 1}</b>. Scanning for a safe column...` });
         if (mode === 'learn' && row === 0) {
-          msgs.push({ type: 'teaching', text: `🎓 We start at Row 1 (the top). The algorithm tries each column from left to right, checking if it's safe to place a queen there.` });
+          msgs.push({ type: 'teaching', text: `🎓 We start at Row 1. The algorithm tries each column left to right, checking safety before placing.` });
         }
         break;
 
       case 'try':
-        msgs.push({ type: 'warning', text: `🔍 Checking Row ${row + 1}, Column ${colL} (${col + 1})...` });
+        msgs.push({ type: 'warning', text: `🔍 Trying Row ${row + 1}, Column ${colL}...` });
         break;
 
       case 'place':
-        if (mode === 'learn' && !state.firstPlacementSeen) {
-          state.firstPlacementSeen = true;
-          msgs.push({ type: 'success', text: `✅ <b>Safe!</b> Placed queen at Row ${row + 1}, Col ${colL}. No conflicts detected.` });
-          msgs.push({ type: 'teaching', text: `🎓 <b>Why is it safe?</b> We check three things:<br>1️⃣ No queen in the same column<br>2️⃣ No queen on the upper-left diagonal<br>3️⃣ No queen on the upper-right diagonal<br>All clear — so we move forward to the next row!` });
+        if (mode === 'learn' && !gameState.firstPlacementSeen) {
+          gameState.firstPlacementSeen = true;
+          msgs.push({ type: 'success', text: `✅ <b>Valid — no conflicts!</b> Queen placed at Row ${row + 1}, Col ${colL}.` });
+          msgs.push({ type: 'teaching', text: `🎓 <b>How do we check safety?</b><br>1️⃣ No queen in the same column<br>2️⃣ No queen on the upper-left diagonal<br>3️⃣ No queen on the upper-right diagonal<br>All clear → move forward!` });
         } else {
-          msgs.push({ type: 'success', text: `✅ <b>Safe!</b> Queen placed at Row ${row + 1}, Col ${colL}.` });
+          msgs.push({ type: 'success', text: `✅ <b>Valid!</b> Queen placed at Row ${row + 1}, Col ${colL}.` });
         }
         break;
 
       case 'reject': {
-        const conflictColL = this.getColLetter(board[conflictRow]);
+        const conflictColL = board[conflictRow] !== -1 ? this.getColLetter(board[conflictRow]) : '?';
         if (conflictReason === 'column') {
-          msgs.push({ type: 'danger', text: `❌ <b>Conflict!</b> Column ${colL} blocked — queen at Row ${conflictRow + 1} is in the same column.` });
+          msgs.push({ type: 'danger', text: `❌ <b>Rejected</b> — column ${colL} blocked by queen at Row ${conflictRow + 1}.` });
         } else {
-          msgs.push({ type: 'danger', text: `❌ <b>Diagonal conflict!</b> Row ${row + 1}, Col ${colL} is attacked diagonally by the queen at Row ${conflictRow + 1}, Col ${conflictColL}.` });
+          msgs.push({ type: 'danger', text: `❌ <b>Rejected</b> — diagonal conflict with queen at Row ${conflictRow + 1}, Col ${conflictColL}.` });
         }
-        if (mode === 'learn' && !state.firstConflictSeen) {
-          state.firstConflictSeen = true;
-          msgs.push({ type: 'teaching', text: `🎓 <b>Key Insight:</b> Queens attack along rows, columns, and diagonals. The <code>isSafe()</code> function checks all placed queens above this row. If any queen shares a column or diagonal, we skip this cell and try the next column.` });
+        if (mode === 'learn' && !gameState.firstConflictSeen) {
+          gameState.firstConflictSeen = true;
+          msgs.push({ type: 'teaching', text: `🎓 <b>Key insight:</b> <code>isSafe()</code> checks all queens above this row. If any shares a column or diagonal — we skip and try the next column.` });
         }
         break;
       }
 
       case 'backtrack':
-        msgs.push({ type: 'danger', text: `↩️ <b>Backtracking!</b> Removing queen from Row ${row + 1}, Col ${colL}. Trying next option...` });
-        if (mode === 'learn' && !state.firstBacktrackSeen) {
-          state.firstBacktrackSeen = true;
-          msgs.push({ type: 'teaching', text: `🎓 <b>This is BACKTRACKING!</b> The heart of the algorithm.<br><br>We couldn't find a safe spot in the next row, so we come back here and move this queen to a different column. It's like retracing your steps in a maze when you hit a wall.<br><br>This process of <em>try → fail → undo → try again</em> is what makes backtracking powerful. It systematically explores all possibilities without ever missing one!` });
+        msgs.push({ type: 'danger', text: `↩️ <b>Backtracking!</b> Removing queen from Row ${row + 1}, Col ${colL}.` });
+        if (mode === 'learn' && !gameState.firstBacktrackSeen) {
+          gameState.firstBacktrackSeen = true;
+          msgs.push({ type: 'teaching', text: `🎓 <b>This is BACKTRACKING!</b> The heart of the algorithm.<br><br>No safe column exists in the next row → we come back and try a different column here. Like retracing steps in a maze.<br><br><em>Try → fail → undo → try again</em> — this systematic exploration is what makes backtracking powerful!` });
         }
         break;
 
       case 'exhausted':
-        msgs.push({ type: 'warning', text: `🚫 Row ${row + 1} exhausted — tried all columns, none worked. Going back up...` });
+        msgs.push({ type: 'warning', text: `🚫 Row ${row + 1} exhausted — all columns failed. Going back up...` });
         if (mode === 'learn') {
-          msgs.push({ type: 'teaching', text: `🎓 When every column in a row fails, we return to the previous row and continue trying columns there. This is the "recursive unwinding" of backtracking.` });
+          msgs.push({ type: 'teaching', text: `🎓 Every column in this row failed. We return to the previous row — this is "recursive unwinding."` });
         }
         break;
 
       case 'solution':
-        msgs.push({ type: 'success', text: `🎉 <b>SOLUTION FOUND!</b> All ${state.n} queens placed safely!` });
+        msgs.push({ type: 'success', text: `🔥 <b>SOLUTION FOUND!</b> All ${gameState.n} queens placed safely!<br><br>This is exactly how backtracking works — trying, validating, and correcting until a valid solution is found.` });
         if (mode === 'learn') {
-          msgs.push({ type: 'teaching', text: `🎓 <b>Mission Complete!</b> The backtracking algorithm explored the search space systematically and found a valid arrangement.<br><br><b>Key Takeaways:</b><br>🔹 We placed one queen per row<br>🔹 For each row, we tried columns left to right<br>🔹 <code>isSafe()</code> checked column & diagonal conflicts<br>🔹 Dead ends triggered backtracking<br>🔹 The algorithm guarantees finding a solution if one exists!` });
+          msgs.push({ type: 'teaching', text: `🎓 <b>Key Takeaways:</b><br>🔹 One queen per row<br>🔹 Try columns left to right<br>🔹 <code>isSafe()</code> prunes invalid branches<br>🔹 Dead ends trigger backtracking<br>🔹 The algorithm guarantees a solution if one exists!` });
         }
         break;
     }
@@ -247,7 +448,7 @@ const TUTOR = {
 
   manualPlace(row, col, n, queensPlaced) {
     const colL = this.getColLetter(col);
-    return { type: 'success', text: `♛ Queen placed at Row ${row + 1}, Col ${colL}. (${queensPlaced}/${n})` };
+    return { type: 'success', text: `♛ Queen placed at Row ${row + 1}, Col ${colL}. <span style="opacity:0.6">(${queensPlaced}/${n})</span>` };
   },
 
   manualRemove(row, col) {
@@ -259,13 +460,24 @@ const TUTOR = {
     const colL = this.getColLetter(col);
     const details = conflicts.map(c => {
       const cColL = this.getColLetter(c.col);
-      return `Row ${c.row + 1}, Col ${cColL} (${c.reason})`;
+      return c.reason === 'column'
+        ? `Row ${c.row + 1} (same column)`
+        : `Row ${c.row + 1}, Col ${cColL} (diagonal)`;
     }).join('; ');
-    return { type: 'danger', text: `⚠️ Row ${row + 1}, Col ${colL} conflicts with: ${details}` };
+    return { type: 'danger', text: `⚠️ <b>Unsafe position!</b> Row ${row + 1}, Col ${colL} conflicts with: ${details}` };
   },
 
   manualSolved(n) {
-    return { type: 'success', text: `🎉 <b>Congratulations!</b> You solved the ${n}-Queens puzzle! All ${n} queens are safe.` };
+    return { type: 'success', text: `🔥 <b>Perfect!</b> You solved the ${n}-Queens puzzle!<br>This is exactly how backtracking works — trying, validating, and correcting until a valid solution is found.` };
+  },
+
+  hintMessage(row, col) {
+    const colL = this.getColLetter(col);
+    return { type: 'hint', text: `💡 Try placing a queen at <b>Row ${row + 1}, Col ${colL}</b> — it keeps all constraints satisfied and leads to a valid solution.` };
+  },
+
+  hintUnavailable() {
+    return { type: 'warning', text: `💡 No valid hint available. The current board state may have conflicts — try removing some queens and rearranging.` };
   }
 };
 
@@ -275,10 +487,10 @@ const TUTOR = {
 function renderBoard() {
   const n = state.n;
   DOM.board.innerHTML = '';
+  DOM.board.classList.remove('board-solved');
   DOM.board.style.gridTemplateColumns = `repeat(${n}, 1fr)`;
   DOM.board.style.gridTemplateRows = `repeat(${n}, 1fr)`;
 
-  // Calculate cell size based on available space
   const wrapperRect = DOM.boardWrapper.getBoundingClientRect();
   const availH = wrapperRect.height - 40;
   const availW = wrapperRect.width - 60;
@@ -289,7 +501,6 @@ function renderBoard() {
   DOM.board.style.width = boardSize + 'px';
   DOM.board.style.height = boardSize + 'px';
 
-  // Create cells
   for (let r = 0; r < n; r++) {
     for (let c = 0; c < n; c++) {
       const cell = document.createElement('div');
@@ -305,7 +516,6 @@ function renderBoard() {
     }
   }
 
-  // Column labels
   DOM.colLabelsTop.innerHTML = '';
   for (let c = 0; c < n; c++) {
     const lbl = document.createElement('div');
@@ -315,7 +525,6 @@ function renderBoard() {
     DOM.colLabelsTop.appendChild(lbl);
   }
 
-  // Row labels
   DOM.rowLabels.innerHTML = '';
   for (let r = 0; r < n; r++) {
     const lbl = document.createElement('div');
@@ -325,16 +534,11 @@ function renderBoard() {
     DOM.rowLabels.appendChild(lbl);
   }
 
-  // Canvas
-  const boardEl = DOM.board;
   DOM.canvas.width = boardSize;
   DOM.canvas.height = boardSize;
   DOM.canvas.style.width = boardSize + 'px';
   DOM.canvas.style.height = boardSize + 'px';
-
-  // Position canvas over board
   DOM.canvas.style.position = 'absolute';
-  // We'll position it relative to board-container
 
   syncCanvasPosition();
 }
@@ -358,8 +562,6 @@ function getCellSize() {
 function placeQueenVisual(row, col, animClass = 'placing') {
   const cell = getCell(row, col);
   if (!cell) return;
-
-  // Remove existing queen
   const existing = cell.querySelector('.queen');
   if (existing) existing.remove();
 
@@ -368,34 +570,19 @@ function placeQueenVisual(row, col, animClass = 'placing') {
   queen.innerHTML = CONFIG.QUEEN_SVG;
   cell.classList.add('has-queen');
   cell.appendChild(queen);
-
-  // Remove animation class after animation completes
-  queen.addEventListener('animationend', () => {
-    queen.classList.remove(animClass);
-  }, { once: true });
+  queen.addEventListener('animationend', () => queen.classList.remove(animClass), { once: true });
 }
 
 function removeQueenVisual(row, col, animClass = 'removing') {
   const cell = getCell(row, col);
   if (!cell) return;
-
   const queen = cell.querySelector('.queen');
   if (!queen) return;
-
   queen.classList.add(animClass);
   queen.addEventListener('animationend', () => {
     queen.remove();
     cell.classList.remove('has-queen');
   }, { once: true });
-}
-
-function clearAllQueenVisuals() {
-  const queens = DOM.board.querySelectorAll('.queen');
-  queens.forEach(q => q.remove());
-  const cells = DOM.board.querySelectorAll('.cell');
-  cells.forEach(c => {
-    c.classList.remove('has-queen', 'valid', 'conflict', 'scanning', 'current-row', 'solution-cell', 'highlight-col', 'highlight-diag');
-  });
 }
 
 function setCellState(row, col, stateClass) {
@@ -405,8 +592,16 @@ function setCellState(row, col, stateClass) {
 
 function clearCellStates() {
   DOM.board.querySelectorAll('.cell').forEach(c => {
-    c.classList.remove('valid', 'conflict', 'scanning', 'current-row', 'solution-cell', 'highlight-col', 'highlight-diag');
+    c.classList.remove('valid', 'conflict', 'scanning', 'current-row', 'solution-cell', 'highlight-col', 'highlight-diag', 'hint-cell');
   });
+}
+
+function clearHintHighlight() {
+  if (state.hintCell) {
+    const cell = getCell(state.hintCell.row, state.hintCell.col);
+    if (cell) cell.classList.remove('hint-cell');
+    state.hintCell = null;
+  }
 }
 
 function highlightCurrentRow(row) {
@@ -426,18 +621,23 @@ function markValidQueens(board) {
 
 function showSolutionCelebration(board) {
   const n = state.n;
+  DOM.board.classList.add('board-solved');
+
   for (let r = 0; r < n; r++) {
     if (board[r] !== -1) {
       setTimeout(() => {
         setCellState(r, board[r], 'solution-cell');
         const queen = getCell(r, board[r])?.querySelector('.queen');
         if (queen) {
-          queen.classList.add('celebrating');
+          queen.classList.add('celebrating', 'solved-queen');
           queen.addEventListener('animationend', () => queen.classList.remove('celebrating'), { once: true });
         }
-      }, r * 100);
+      }, r * 120);
     }
   }
+
+  // Launch confetti!
+  setTimeout(() => confetti.launch(150), 200);
 }
 
 
@@ -453,13 +653,12 @@ function drawConflictLine(fromRow, fromCol, toRow, toCol) {
   const y1 = fromRow * cellSize + cellSize / 2;
   const x2 = toCol * cellSize + cellSize / 2;
   const y2 = toRow * cellSize + cellSize / 2;
-
   const ctx = DOM.ctx;
 
-  // Glow
+  // Glow layer
   ctx.save();
   ctx.strokeStyle = 'rgba(248, 113, 113, 0.15)';
-  ctx.lineWidth = 8;
+  ctx.lineWidth = 10;
   ctx.lineCap = 'round';
   ctx.beginPath();
   ctx.moveTo(x1, y1);
@@ -467,9 +666,9 @@ function drawConflictLine(fromRow, fromCol, toRow, toCol) {
   ctx.stroke();
   ctx.restore();
 
-  // Main line
+  // Main dashed line
   ctx.save();
-  ctx.strokeStyle = 'rgba(248, 113, 113, 0.6)';
+  ctx.strokeStyle = 'rgba(248, 113, 113, 0.55)';
   ctx.lineWidth = 2.5;
   ctx.lineCap = 'round';
   ctx.setLineDash([6, 4]);
@@ -519,7 +718,6 @@ function drawManualConflicts(board) {
     }
   }
 
-  // Mark conflicting cells
   const conflictCells = new Set();
   conflicts.forEach(c => {
     conflictCells.add(`${c.row1}-${c.col1}`);
@@ -530,7 +728,6 @@ function drawManualConflicts(board) {
     setCellState(r, c, 'conflict');
   });
 
-  // Mark valid queens (those not in any conflict)
   for (let r = 0; r < n; r++) {
     if (board[r] !== -1 && !conflictCells.has(`${r}-${board[r]}`)) {
       setCellState(r, board[r], 'valid');
@@ -560,34 +757,43 @@ const CODE_LINES = [
 ];
 
 function updateCodeHighlight(stepType) {
+  let activeIdx = -1;
   const lines = CODE_LINES.map((line, idx) => {
     let cls = 'code-line';
     switch (stepType) {
       case 'enter-row':
-        if (idx === 0) cls += ' active';
+        if (idx === 0) { cls += ' active'; activeIdx = idx; }
         break;
       case 'solution':
-        if (idx === 1) cls += ' success-line';
+        if (idx === 1) { cls += ' success-line'; activeIdx = idx; }
         break;
       case 'try':
-        if (idx === 3) cls += ' active';
+        if (idx === 3) { cls += ' active'; activeIdx = idx; }
         break;
       case 'place':
-        if (idx === 4 || idx === 5) cls += ' success-line';
+        if (idx === 4 || idx === 5) { cls += ' success-line'; if (activeIdx < 0) activeIdx = idx; }
         break;
       case 'reject':
-        if (idx === 4) cls += ' danger-line';
+        if (idx === 4) { cls += ' danger-line'; activeIdx = idx; }
         break;
       case 'backtrack':
-        if (idx === 8) cls += ' danger-line';
+        if (idx === 8) { cls += ' danger-line'; activeIdx = idx; }
         break;
       case 'exhausted':
-        if (idx === 11) cls += ' danger-line';
+        if (idx === 11) { cls += ' danger-line'; activeIdx = idx; }
         break;
     }
-    return `<span class="${cls}">${escapeHtml(line)}</span>`;
+    return `<span class="${cls}" id="code-line-${idx}">${escapeHtml(line)}</span>`;
   });
   DOM.codeDisplay.innerHTML = lines.join('\n');
+
+  // Auto-scroll to active line
+  if (activeIdx >= 0 && DOM.codeBlock) {
+    const activeLine = document.getElementById(`code-line-${activeIdx}`);
+    if (activeLine) {
+      activeLine.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  }
 }
 
 function escapeHtml(str) {
@@ -657,18 +863,16 @@ function stopAnimation() {
 async function executeStep(step) {
   state.totalSteps++;
   state.currentStepIdx++;
-  const { type, row, col, board, conflictRow, conflictReason } = step;
+  const { type, row, col, board, conflictRow } = step;
 
-  // Clear previous cell states
   clearCellStates();
   clearCanvas();
+  clearHintHighlight();
 
-  // Count queens from the board
   if (board) {
     state.queensPlaced = board.filter(c => c !== -1).length;
   }
 
-  // Redraw all existing queens from board state
   renderBoardFromState(board);
 
   switch (type) {
@@ -685,7 +889,6 @@ async function executeStep(step) {
       markValidQueens(board);
       updateAlgoState(row, col, 'Checking cell', state.queensPlaced);
       updateCodeHighlight('try');
-      // Show what columns/diagonals are being checked
       showThreatLines(board, row, col);
       break;
 
@@ -727,10 +930,15 @@ async function executeStep(step) {
       updateCodeHighlight('solution');
       updateStatus('Solved!');
       DOM.tutorStatus.textContent = 'Solution found!';
+      factEngine.showFact();
       break;
   }
 
-  // Generate and show tutor messages
+  // Show fact periodically during solve/learn
+  if (type === 'place' && state.totalSteps % 15 === 0) {
+    factEngine.showFact();
+  }
+
   const msgs = TUTOR.stepMessage(step, state.mode, state);
   addTutorMessages(msgs);
   updateStats();
@@ -738,11 +946,9 @@ async function executeStep(step) {
 
 function renderBoardFromState(board) {
   if (!board) return;
-  // Remove all queens from DOM
   DOM.board.querySelectorAll('.queen').forEach(q => q.remove());
   DOM.board.querySelectorAll('.cell').forEach(c => c.classList.remove('has-queen'));
 
-  // Place queens at their positions (no animation, just instant)
   for (let r = 0; r < board.length; r++) {
     if (board[r] !== -1) {
       const cell = getCell(r, board[r]);
@@ -758,11 +964,8 @@ function renderBoardFromState(board) {
 }
 
 function showThreatLines(board, row, col) {
-  // Show subtle highlights on cells being checked (column and diagonals)
   for (let r = 0; r < row; r++) {
-    // Column check
     setCellState(r, col, 'highlight-col');
-    // Diagonal checks
     const d1 = col - (row - r);
     const d2 = col + (row - r);
     if (d1 >= 0 && d1 < state.n) setCellState(r, d1, 'highlight-diag');
@@ -783,7 +986,6 @@ async function runAnimation() {
 
     if (state.isSolved || !state.isPlaying) break;
 
-    // Adjust delay based on step type
     let d = getDelay();
     if (step.type === 'try') d = Math.max(d * 0.5, 20);
     if (step.type === 'enter-row') d = Math.max(d * 0.3, 10);
@@ -815,12 +1017,12 @@ function updatePlaybackButtons() {
   const hasSteps = state.steps.length > 0;
   const isDone = state.isSolved || (hasSteps && state.currentStepIdx >= state.steps.length);
 
-  DOM.startBtn.disabled = isManual || (state.isPlaying) || isDone;
+  DOM.startBtn.disabled = isManual || state.isPlaying || isDone;
   DOM.pauseBtn.disabled = isManual || !state.isPlaying;
   DOM.stepBtn.disabled = isManual || state.isPlaying || isDone;
+  DOM.hintBtn.disabled = !isManual || state.isSolved;
   DOM.resetBtn.disabled = false;
 
-  // Update button text
   if (state.isPlaying) {
     DOM.startBtn.querySelector('.ctrl-text').textContent = 'Running';
     DOM.pauseBtn.querySelector('.ctrl-text').textContent = 'Pause';
@@ -833,7 +1035,6 @@ function updatePlaybackButtons() {
     DOM.pauseBtn.querySelector('.ctrl-text').textContent = 'Pause';
   }
 
-  // In manual mode, show different controls
   if (isManual) {
     DOM.startBtn.querySelector('.ctrl-text').textContent = 'Start';
     DOM.pauseBtn.querySelector('.ctrl-text').textContent = 'Pause';
@@ -845,41 +1046,40 @@ function updatePlaybackButtons() {
 
 function onCellClick(row, col) {
   if (state.mode !== 'manual') return;
-  if (state.isPlaying) return;
+  if (state.isPlaying || state.isSolved) return;
 
-  // Toggle queen
+  clearHintHighlight();
+  state.manualMoveCount++;
+
   if (state.board[row] === col) {
-    // Remove queen
     state.board[row] = -1;
     removeQueenVisual(row, col);
     state.queensPlaced = state.board.filter(c => c !== -1).length;
     addTutorMessage(TUTOR.manualRemove(row, col));
   } else if (state.board[row] !== -1) {
-    // Remove old queen from this row first
     const oldCol = state.board[row];
     removeQueenVisual(row, oldCol);
-
-    // Place new queen
     state.board[row] = col;
     placeQueenVisual(row, col, 'placing');
     state.queensPlaced = state.board.filter(c => c !== -1).length;
     addTutorMessage(TUTOR.manualPlace(row, col, state.n, state.queensPlaced));
   } else {
-    // Place queen
     state.board[row] = col;
     placeQueenVisual(row, col, 'placing');
     state.queensPlaced = state.board.filter(c => c !== -1).length;
     addTutorMessage(TUTOR.manualPlace(row, col, state.n, state.queensPlaced));
   }
 
-  // Check conflicts
+  // Show a fact every 4 moves
+  if (state.manualMoveCount % 4 === 0) {
+    factEngine.showFact();
+  }
+
   setTimeout(() => {
     clearCellStates();
     const conflicts = drawManualConflicts(state.board);
 
-    // Show conflict messages
     if (conflicts.length > 0) {
-      const lastPlaced = { row, col };
       const relevantConflicts = conflicts
         .filter(c => (c.row1 === row && c.col1 === col) || (c.row2 === row && c.col2 === col))
         .map(c => {
@@ -895,24 +1095,54 @@ function onCellClick(row, col) {
       }
     }
 
-    // Check if solved
     if (state.queensPlaced === state.n && conflicts.length === 0) {
       state.isSolved = true;
       addTutorMessage(TUTOR.manualSolved(state.n));
       showSolutionCelebration(state.board);
       updateStatus('Solved!');
       DOM.tutorStatus.textContent = '🎉 Puzzle solved!';
+      updatePlaybackButtons();
     }
 
     updateStats();
   }, 50);
 }
 
+function onHintClick() {
+  if (state.mode !== 'manual' || state.isSolved) return;
+  clearHintHighlight();
+
+  // Check for existing conflicts first
+  const currentConflicts = [];
+  for (let r1 = 0; r1 < state.n; r1++) {
+    if (state.board[r1] === -1) continue;
+    for (let r2 = r1 + 1; r2 < state.n; r2++) {
+      if (state.board[r2] === -1) continue;
+      if (state.board[r1] === state.board[r2] || Math.abs(state.board[r1] - state.board[r2]) === Math.abs(r1 - r2)) {
+        currentConflicts.push({ r1, r2 });
+      }
+    }
+  }
+
+  if (currentConflicts.length > 0) {
+    addTutorMessage({ type: 'warning', text: '⚠️ Your board has conflicts! Remove the conflicting queens first, then ask for a hint.' });
+    return;
+  }
+
+  const hint = computeHint(state.board, state.n);
+  if (hint) {
+    state.hintCell = hint;
+    setCellState(hint.row, hint.col, 'hint-cell');
+    addTutorMessage(TUTOR.hintMessage(hint.row, hint.col));
+  } else {
+    addTutorMessage(TUTOR.hintUnavailable());
+  }
+}
+
 function onStartClick() {
   if (state.mode === 'manual') return;
 
   if (state.isPaused) {
-    // Resume
     state.isPaused = false;
     runAnimation();
     return;
@@ -920,7 +1150,6 @@ function onStartClick() {
 
   if (state.isPlaying || state.isSolved) return;
 
-  // Pre-compute steps
   if (state.steps.length === 0) {
     state.steps = generateSteps(state.n);
   }
@@ -946,7 +1175,6 @@ function onStepClick() {
 
   if (state.steps.length === 0) {
     state.steps = generateSteps(state.n);
-    // Show initial messages
     const welcomeMsgs = TUTOR.welcome(state.mode, state.n);
     addTutorMessages(welcomeMsgs);
     DOM.tutorStatus.textContent = 'Step-by-step';
@@ -967,6 +1195,8 @@ function onResetClick() {
   state.queensPlaced = 0;
   state.totalSteps = 0;
   state.totalBacktracks = 0;
+  state.manualMoveCount = 0;
+  state.hintCell = null;
   state.firstBacktrackSeen = false;
   state.firstConflictSeen = false;
   state.firstPlacementSeen = false;
@@ -981,23 +1211,16 @@ function onResetClick() {
   updateStatus('Ready');
   DOM.tutorStatus.textContent = 'Ready to help';
 
-  // Show welcome
   const welcomeMsgs = TUTOR.welcome(state.mode, state.n);
   addTutorMessages(welcomeMsgs);
-
-  // Remove solution overlay if any
-  const overlay = DOM.board.querySelector('.solution-overlay');
-  if (overlay) overlay.remove();
+  factEngine.showFact();
 }
 
 function onModeChange(mode) {
   if (mode === state.mode) return;
-
-  // Update active button
   document.querySelectorAll('.mode-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.mode === mode);
   });
-
   state.mode = mode;
   onResetClick();
 }
@@ -1006,7 +1229,6 @@ function onBoardSizeChange(newN) {
   newN = parseInt(newN);
   if (newN < CONFIG.MIN_N || newN > CONFIG.MAX_N) return;
   if (newN === state.n) return;
-
   state.n = newN;
   onResetClick();
 }
@@ -1022,42 +1244,39 @@ function onSpeedChange(val) {
 function init() {
   cacheDom();
 
-  // Set initial state
   state.board = new Array(state.n).fill(-1);
 
-  // Render board
+  factEngine.init();
+  confetti.init();
+
   renderBoard();
   updateStats();
   updatePlaybackButtons();
   updateAlgoState(null, null, 'Idle', 0);
   updateCodeHighlight('');
 
-  // Welcome messages
   const welcomeMsgs = TUTOR.welcome(state.mode, state.n);
   addTutorMessages(welcomeMsgs);
+  factEngine.showFact();
 
   // Event Listeners
   DOM.startBtn.addEventListener('click', onStartClick);
   DOM.pauseBtn.addEventListener('click', onPauseClick);
   DOM.stepBtn.addEventListener('click', onStepClick);
+  DOM.hintBtn.addEventListener('click', onHintClick);
   DOM.resetBtn.addEventListener('click', onResetClick);
-
   DOM.speedSlider.addEventListener('input', (e) => onSpeedChange(e.target.value));
-
   DOM.boardSizeSelect.addEventListener('change', (e) => onBoardSizeChange(e.target.value));
 
-  // Mode buttons
   document.querySelectorAll('.mode-btn').forEach(btn => {
     btn.addEventListener('click', () => onModeChange(btn.dataset.mode));
   });
 
-  // Resize handler
   let resizeTimer;
   window.addEventListener('resize', () => {
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
       renderBoard();
-      // Re-render queens from current state
       if (state.board) {
         renderBoardFromState(state.board);
         if (state.mode === 'manual') {
@@ -1069,5 +1288,4 @@ function init() {
   });
 }
 
-// Start the app
 document.addEventListener('DOMContentLoaded', init);
