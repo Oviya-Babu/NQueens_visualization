@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>N-Queens AI Learning System — Interactive Backtracking Visualizer</title>
+  <meta name="description" content="Master the N-Queens problem with an AI-powered visual learning experience. Watch backtracking in action, play manually, or let the AI teach you step by step.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- Animated background -->
+  <div class="bg-gradient"></div>
+  <div class="bg-grid"></div>
+
+  <div class="app" id="app">
+
+    <!-- ===== HEADER ===== -->
+    <header class="header" id="header">
+      <div class="header-left">
+        <div class="logo">
+          <span class="logo-icon">♛</span>
+          <div class="logo-text">
+            <h1>N-Queens</h1>
+            <span class="logo-subtitle">AI Learning System</span>
+          </div>
+        </div>
+      </div>
+      <div class="header-center">
+        <div class="mode-selector" id="modeSelector">
+          <button class="mode-btn active" data-mode="manual" id="manualModeBtn">
+            <span class="mode-icon">🎮</span>
+            <span class="mode-label">Manual</span>
+          </button>
+          <button class="mode-btn" data-mode="solve" id="solveModeBtn">
+            <span class="mode-icon">🤖</span>
+            <span class="mode-label">AI Solve</span>
+          </button>
+          <button class="mode-btn" data-mode="learn" id="learnModeBtn">
+            <span class="mode-icon">📚</span>
+            <span class="mode-label">Learn</span>
+          </button>
+          <div class="mode-indicator" id="modeIndicator"></div>
+        </div>
+      </div>
+      <div class="header-right">
+        <div class="board-size-control">
+          <label for="boardSizeSelect">Board</label>
+          <select id="boardSizeSelect">
+            <option value="4">4 × 4</option>
+            <option value="5">5 × 5</option>
+            <option value="6">6 × 6</option>
+            <option value="7">7 × 7</option>
+            <option value="8" selected>8 × 8</option>
+            <option value="9">9 × 9</option>
+            <option value="10">10 × 10</option>
+          </select>
+        </div>
+      </div>
+    </header>
+
+    <!-- ===== MAIN CONTENT ===== -->
+    <main class="main" id="main">
+
+      <!-- LEFT: Board Section (70%) -->
+      <section class="board-section" id="boardSection">
+        
+        <!-- Stats Bar -->
+        <div class="stats-bar" id="statsBar">
+          <div class="stat-item" id="statQueens">
+            <span class="stat-icon">♛</span>
+            <span class="stat-value" id="queensPlaced">0</span>
+            <span class="stat-label">/ <span id="queensNeeded">8</span> Queens</span>
+          </div>
+          <div class="stat-item" id="statSteps">
+            <span class="stat-icon">📍</span>
+            <span class="stat-value" id="stepsCount">0</span>
+            <span class="stat-label">Steps</span>
+          </div>
+          <div class="stat-item" id="statBacktracks">
+            <span class="stat-icon">↩️</span>
+            <span class="stat-value" id="backtracksCount">0</span>
+            <span class="stat-label">Backtracks</span>
+          </div>
+          <div class="stat-item" id="statStatus">
+            <span class="stat-icon">⏳</span>
+            <span class="stat-value" id="statusText">Ready</span>
+          </div>
+        </div>
+
+        <!-- Board Container -->
+        <div class="board-wrapper" id="boardWrapper">
+          <div class="board-container" id="boardContainer">
+            <!-- Column labels top -->
+            <div class="col-labels" id="colLabelsTop"></div>
+            <div class="board-with-rows">
+              <!-- Row labels left -->
+              <div class="row-labels" id="rowLabels"></div>
+              <!-- Board Grid -->
+              <div class="board" id="board"></div>
+            </div>
+            <!-- Canvas overlay for conflict lines -->
+            <canvas id="conflictCanvas"></canvas>
+          </div>
+        </div>
+
+        <!-- Playback Controls -->
+        <div class="playback-controls" id="playbackControls">
+          <div class="control-group-left">
+            <button class="ctrl-btn primary" id="startBtn" title="Start solving">
+              <span class="ctrl-icon">▶</span>
+              <span class="ctrl-text">Start</span>
+            </button>
+            <button class="ctrl-btn" id="pauseBtn" title="Pause" disabled>
+              <span class="ctrl-icon">⏸</span>
+              <span class="ctrl-text">Pause</span>
+            </button>
+            <button class="ctrl-btn" id="stepBtn" title="Step forward">
+              <span class="ctrl-icon">⏭</span>
+              <span class="ctrl-text">Step</span>
+            </button>
+            <button class="ctrl-btn danger" id="resetBtn" title="Reset board">
+              <span class="ctrl-icon">↺</span>
+              <span class="ctrl-text">Reset</span>
+            </button>
+          </div>
+          <div class="control-group-right">
+            <div class="speed-control">
+              <label for="speedSlider">Speed</label>
+              <input type="range" id="speedSlider" min="1" max="10" value="5" step="1">
+              <span class="speed-value" id="speedValue">5x</span>
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- RIGHT: AI Tutor Panel (30%) -->
+      <aside class="tutor-panel" id="tutorPanel">
+        
+        <!-- Tutor Header -->
+        <div class="tutor-header" id="tutorHeader">
+          <div class="ai-avatar" id="aiAvatar">
+            <span class="avatar-emoji">🧠</span>
+            <span class="avatar-pulse"></span>
+          </div>
+          <div class="tutor-title">
+            <h2>AI Tutor</h2>
+            <span class="tutor-status" id="tutorStatus">Ready to help</span>
+          </div>
+        </div>
+
+        <!-- Algorithm State Visualization -->
+        <div class="algo-state glass-card" id="algoState">
+          <div class="algo-state-header">
+            <span class="algo-icon">⚙️</span>
+            <span>Algorithm State</span>
+          </div>
+          <div class="algo-state-body">
+            <div class="algo-row">
+              <span class="algo-key">Current Row</span>
+              <span class="algo-val" id="algoRow">—</span>
+            </div>
+            <div class="algo-row">
+              <span class="algo-key">Current Col</span>
+              <span class="algo-val" id="algoCol">—</span>
+            </div>
+            <div class="algo-row">
+              <span class="algo-key">Action</span>
+              <span class="algo-val" id="algoAction">Idle</span>
+            </div>
+            <div class="algo-row">
+              <span class="algo-key">Queens Safe</span>
+              <span class="algo-val" id="algoQueens">0</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Messages Area -->
+        <div class="tutor-messages" id="tutorMessages">
+          <!-- Messages will be injected here -->
+        </div>
+
+        <!-- Code Snapshot -->
+        <div class="code-snapshot glass-card" id="codeSnapshot">
+          <div class="code-header">
+            <span class="code-icon">💻</span>
+            <span>Live Code</span>
+          </div>
+          <pre class="code-block"><code id="codeDisplay">function solveNQueens(row) {
+  if (row === N) return true; // ✓ solved!
+  
+  for (col = 0; col &lt; N; col++) {
+    if (isSafe(board, row, col)) {
+      board[row] = col;       // place queen
+      if (solveNQueens(row + 1))
+        return true;
+      board[row] = -1;        // backtrack
+    }
+  }
+  return false; // trigger backtrack
+}</code></pre>
+        </div>
+
+      </aside>
+
+    </main>
+
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
